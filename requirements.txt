@@ -1,0 +1,4 @@
+flask==3.0.2
+pymilvus==2.3.6
+sentence-transformers==2.5.1
+python-dotenv==1.0.1 
