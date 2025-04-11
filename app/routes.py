@@ -28,17 +28,17 @@ def add_embedding():
         return jsonify({"error": str(e)}), 500
 
 
-@main.route("/api/embeddings/search", methods=["GET"])
+@main.route("/api/embeddings/search", methods=["POST"])
 def search_embeddings():
     """
     Search for similar texts based on query text
     """
-    query_text = request.args.get("query")
-    if not query_text:
+    data = request.get_json()
+    if not data or "query" not in data:
         return jsonify({"error": "Query text is required"}), 400
 
     try:
-        query_embedding = get_embedding(query_text)
+        query_embedding = get_embedding(data["query"])
         results = embedding_service.search_similar(query_embedding)
         return jsonify({"results": results}), 200
     except Exception as e:
