@@ -81,9 +81,9 @@ class EmbeddingService:
 
         return formatted_results
 
-    def list_texts(self):
+    def list_texts(self, limit=1000):
         """
-        List all stored texts
+        List all stored texts with pagination
         """
-        results = self.collection.query(expr="", output_fields=["text"])
+        results = self.collection.query(expr="", output_fields=["text"], limit=limit)
         return [result.get("text") for result in results]
