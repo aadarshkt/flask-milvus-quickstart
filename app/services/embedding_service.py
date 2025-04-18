@@ -32,11 +32,21 @@ class EmbeddingService:
         embedding_field = FieldSchema(
             name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.dimension
         )
+        chunk_id_field = FieldSchema(name="chunk_id", dtype=DataType.INT64)
+        document_id_field = FieldSchema(
+            name="document_id", dtype=DataType.VARCHAR, max_length=255
+        )
 
         # Create schema
         schema = CollectionSchema(
-            fields=[id_field, text_field, embedding_field],
-            description="Collection for storing text embeddings",
+            fields=[
+                id_field,
+                text_field,
+                embedding_field,
+                chunk_id_field,
+                document_id_field,
+            ],
+            description="Collection for storing text embeddings with document and chunk information",
         )
 
         # Create collection
@@ -44,31 +54,44 @@ class EmbeddingService:
 
         # Create index
         index_params = {
-            "metric_type": "L2",
+            "metric_type": "COSINE",
             "index_type": "IVF_FLAT",
             "params": {"nlist": 1024},
         }
         collection.create_index(field_name="embedding", index_params=index_params)
 
-    def add_embedding(self, text, embedding):
+    def add_embedding(self, text, embedding, chunk_id, document_id):
         """
-        Add a new text and its embedding to the collection
+        Add a new text and its embedding to the collection with chunk and document information
+        Returns the vector IDs of the inserted embeddings
         """
-        entities = [[text], [embedding]]
-        self.collection.insert(entities)
+        entities = [[text], [embedding], [chunk_id], [document_id]]
+        # Insert and get the primary keys (vector IDs)
+        result = self.collection.insert(entities)
+        return result.primary_keys  # Returns list of vector IDs
+
+    def get_embedding_by_id(self, vector_id):
+        """
+        Retrieve embedding and its metadata by vector ID
+        """
+        result = self.collection.query(
+            expr=f"id == {vector_id}",
+            output_fields=["text", "embedding", "chunk_id", "document_id"],
+        )
+        return result[0] if result else None
 
     def search_similar(self, query_embedding, limit=5):
         """
         Search for similar texts based on query embedding
         """
-        search_params = {"metric_type": "L2", "params": {"nprobe": 10}}
+        search_params = {"metric_type": "COSINE", "params": {"nprobe": 10}}
 
         results = self.collection.search(
             data=[query_embedding],
             anns_field="embedding",
             param=search_params,
             limit=limit,
-            output_fields=["text"],
+            output_fields=["text", "chunk_id", "document_id"],
         )
 
         # Format results
@@ -76,7 +99,48 @@ class EmbeddingService:
         for hits in results:
             for hit in hits:
                 formatted_results.append(
-                    {"text": hit.entity.get("text"), "distance": hit.distance}
+                    {
+                        "text": hit.entity.get("text"),
+                        "distance": hit.distance,
+                        "chunk_id": hit.entity.get("chunk_id"),
+                        "document_id": hit.entity.get("document_id"),
+                    }
+                )
+
+        return formatted_results
+
+    def search_similar_with_document_filter(
+        self, query_embedding, document_ids, limit=5
+    ):
+        """
+        Search for similar texts based on query embedding, filtered by document IDs
+        """
+        search_params = {"metric_type": "COSINE", "params": {"nprobe": 10}}
+
+        # Create expression to filter by document IDs
+        document_ids_str = ", ".join([f"'{doc_id}'" for doc_id in document_ids])
+        expr = f"document_id in [{document_ids_str}]"
+
+        results = self.collection.search(
+            data=[query_embedding],
+            anns_field="embedding",
+            param=search_params,
+            limit=limit,
+            expr=expr,  # Add the filter expression
+            output_fields=["text", "chunk_id", "document_id"],
+        )
+
+        # Format results
+        formatted_results = []
+        for hits in results:
+            for hit in hits:
+                formatted_results.append(
+                    {
+                        "text": hit.entity.get("text"),
+                        "distance": hit.distance,
+                        "chunk_id": hit.entity.get("chunk_id"),
+                        "document_id": hit.entity.get("document_id"),
+                    }
                 )
 
         return formatted_results
